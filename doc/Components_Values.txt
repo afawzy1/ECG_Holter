@@ -1,0 +1,30 @@
+ECG Holter Filters values (surface mount):
+---------------------------
+RL = RH = 31.6K
+CL = 100nF
+CH = 10uF
+FcL = 41Hz
+FcH = 0.5Hz
+(Voltage divider for the offset).
+R5 = 50K
+R6 = 31.6K
+
+ECG Holter Filters values (Test Board):
+----------------------------------------
+RL = 354K (Multiturn)
+CL = 10nF
+RH = 1.5M
+CH = 220nF
+
+(Voltage divider for the offset).
+R5 = 150K
+R6 = 91K
+Crocodiles and ECH electrodes. 
+
+
+
+
+
+(*Note: All Capacitors are ceramic).
+
+
