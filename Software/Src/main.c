@@ -144,6 +144,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 	}
 }
 
+static void MX_LCD_Init(void)
+{
+    LCD1602_Begin4BIT(LCD_RS_GPIO_Port, LCD_RS_Pin, LCD_EN_Pin,
+                        LCD_D0_GPIO_Port, LCD_D0_Pin, LCD_D1_Pin, LCD_D2_Pin, LCD_D3_Pin);
+    LCD1602_noCursor();
+    LCD1602_noBlink();
+    LCD1602_clear();
+}
+
 /* USER CODE END 0 */
 
 int main(void)
@@ -341,14 +350,6 @@ void SystemClock_Config(void)
   HAL_NVIC_SetPriority(SysTick_IRQn, 15, 0);
 }
 
-static void MX_LCD_Init(void)
-{
-	LCD1602_Begin4BIT(LCD_RS_GPIO_Port, LCD_RS_Pin, LCD_EN_Pin,
-						LCD_D0_GPIO_Port, LCD_D0_Pin, LCD_D1_Pin, LCD_D2_Pin, LCD_D3_Pin);
-	LCD1602_noCursor();
-	LCD1602_noBlink();
-	LCD1602_clear();
-}
 
 /* ADC1 init function */
 static void MX_ADC1_Init(void)
