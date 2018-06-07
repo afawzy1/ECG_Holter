@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=C:/E/Project/Holter_SW4STM/Software/Inc
+HeaderPath=C:/E/Project/ECGHolter_SW4STM/Software/Inc
 HeaderFiles=ffconf.h;bsp_driver_sd.h;fatfs.h;FreeRTOSConfig.h;stm32f4xx_it.h;stm32f4xx_hal_conf.h;main.h;sd_diskio.h;gpio.h;adc.h;dma.h;rtc.h;sdio.h;usart.h;
-SourcePath=C:/E/Project/Holter_SW4STM/Software/Src
+SourcePath=C:/E/Project/ECGHolter_SW4STM/Software/Src
 SourceFiles=ffconf.h;bsp_driver_sd.h;fatfs.h;FreeRTOSConfig.h;stm32f4xx_it.h;stm32f4xx_hal_conf.h;main.h;bsp_driver_sd.c;fatfs.c;freertos.c;stm32f4xx_it.c;stm32f4xx_hal_msp.c;stm32f4xx_hal_timebase_TIM.c;main.c;sd_diskio.c;gpio.c;adc.c;dma.c;rtc.c;sdio.c;usart.c;sd_diskio.h;gpio.h;adc.h;dma.h;rtc.h;sdio.h;usart.h;
 
 [PreviousLibFiles]

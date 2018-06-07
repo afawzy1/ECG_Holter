@@ -58,9 +58,10 @@
 #include "RTC_user_init.h"
 #include "string.h"
 
-#define INIT		((uint8_t)0)
-#define AQUIRED		((uint8_t)1)
-#define SAVED		((uint8_t)2)
+#define AQUIRED			((uint8_t)1)
+#define SAVED			((uint8_t)2)
+
+#define ADC_DATA_LGTH   (300)
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -87,12 +88,12 @@ osMessageQId BLK_EN_QHandle;
 /* Type definitions ---------------------------------------------------------*/
 
 typedef struct{
-	uint16_t ADC_Data[16];
+	uint16_t ADC_Data[ADC_DATA_LGTH];
 	uint8_t Status;
 }EKGData_S;
 
 /* Private variables ---------------------------------------------------------*/
-static volatile uint16_t dma_buffer[16];
+static volatile uint16_t dma_buffer[ADC_DATA_LGTH];
 EKGData_S EKGData;
 static volatile uint16_t Vbat_value;
 /* USER CODE END PV */
@@ -121,25 +122,25 @@ static void MX_LCD_Init(void);
 /* USER CODE BEGIN 0 */
 FATFS fileSystem;
 FIL EKGFile;
-uint8_t path[] = "EKG06.txt\0";
+uint8_t path[] = "EKG6666.txt\0";
 UINT testBytes;
 FRESULT res;
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	uint8_t indx = 0;
-	if(AQUIRED != EKGData.Status)
+	uint16_t indx = 0;
+	if(SAVED == EKGData.Status)
 	{
-		for(indx = 0; indx < 16; indx++)
+		for(indx = 0; indx < ADC_DATA_LGTH; indx++)
 		{
 			EKGData.ADC_Data[indx] = dma_buffer[indx];
 		}
 		EKGData.Status = AQUIRED;
-		HAL_ADC_Stop(&hadc1);
-		HAL_ADC_Stop_DMA(&hadc1);
-
+/*		HAL_ADC_Stop(&hadc1);
+		HAL_ADC_Stop_DMA(&hadc1);*/
 	}
 	else
 	{
+		LCD1602_print(" SYSTEM FAILURE ");
 		_Error_Handler(__FILE__, __LINE__);
 	}
 }
@@ -189,9 +190,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   MX_FATFS_Init();
   memset(&(EKGData.ADC_Data), ((uint8_t)0), sizeof(EKGData.ADC_Data));
-  EKGData.Status = INIT;
+  EKGData.Status = SAVED;
   MX_LCD_Init();
-  SetSystemTime();
+//  SetSystemTime();
   LCD1602_clear();
   if(f_mount(&fileSystem,SDPath, 1) == FR_OK)
   {
@@ -203,8 +204,6 @@ int main(void)
   	LCD1602_print(" SYSTEM FAILURE ");
   	 _Error_Handler(__FILE__, __LINE__);
   }
-  HAL_ADC_Start(&hadc1);
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, 16);
 
   /* USER CODE END 2 */
 
@@ -308,10 +307,10 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 192;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV8;
-  RCC_OscInitStruct.PLL.PLLQ = 8;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 72;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 3;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -324,9 +323,9 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV16;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -350,7 +349,6 @@ void SystemClock_Config(void)
   HAL_NVIC_SetPriority(SysTick_IRQn, 15, 0);
 }
 
-
 /* ADC1 init function */
 static void MX_ADC1_Init(void)
 {
@@ -361,7 +359,7 @@ static void MX_ADC1_Init(void)
     /**Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
     */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV6;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
@@ -482,7 +480,7 @@ static void MX_SDIO_SD_Init(void)
   hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
   hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
   hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd.Init.ClockDiv = 3;
+  hsd.Init.ClockDiv = 0;
 
 }
 
@@ -583,6 +581,7 @@ static void MX_GPIO_Init(void)
 void StartReadSignal(void const * argument)
 {
   /* init code for FATFS */
+  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -650,7 +649,7 @@ void StartWriteSD(void const * argument)
 {
   /* USER CODE BEGIN StartWriteSD */
 	RTC_TimeTypeDef sTime;
-	uint i;
+	uint16_t i;
 	char msg1[30];
 	int length;
 
@@ -665,28 +664,27 @@ void StartWriteSD(void const * argument)
 	f_write(&EKGFile, (void *)msg1, length, &testBytes);
 	length = sprintf(msg1,"%.2d\n", (sTime.Seconds));
 	f_write(&EKGFile, (void *)msg1, length, &testBytes);
-
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, ADC_DATA_LGTH);
 
   /* Infinite loop */
   for(;;)
   {
-	if( AQUIRED == EKGData.Status)
-	{
-		for(i= 0; i<16; i++)
-		{
-			length = sprintf(msg1,"%.4d\n",EKGData.ADC_Data[i]);
-			res = f_write(&EKGFile, (void *)msg1, length, &testBytes);
-			f_sync(&EKGFile);
-//			fputs(msg, &EKGFile);
-//			f_printf(&EKGFile, "%s\n", EKGData.ADC_Data[i]);
-			EKGData.Status = SAVED;
-		}
-	}
+	  if( AQUIRED == EKGData.Status)
+	  {
+	  	for(i= 0; i < ADC_DATA_LGTH; i++)
+	  	{
+	  		length = sprintf(msg1,"%.4d\n",EKGData.ADC_Data[i]);
+	  		res = f_write(&EKGFile, (void *)msg1, length, &testBytes);
+	  	}
+  		f_sync(&EKGFile);
+  		EKGData.Status = SAVED;
+	  }
 	else
 	{
 		/*do nothing*/
 	}
-    osDelay(1);
+	osDelay(1);
   }
 
   /* USER CODE END StartWriteSD */
