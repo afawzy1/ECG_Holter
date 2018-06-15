@@ -60,8 +60,15 @@
 
 #define AQUIRED			((uint8_t)1)
 #define SAVED			((uint8_t)2)
+#define PAUSED			((uint8_t)3)
 
 #define ADC_DATA_LGTH   (300)
+
+#define KEY_UP_MSK		((uint8_t) 0x01)
+#define KEY_DOWN_MSK	((uint8_t) 0x02)
+#define KEY_OK_MSK		((uint8_t) 0x04)
+#define KEY_C_MSK		((uint8_t) 0x08)
+#define NO_KEY_MSK		((uint8_t) 0x00)
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -74,15 +81,15 @@ SD_HandleTypeDef hsd;
 
 UART_HandleTypeDef huart6;
 
-osThreadId ReadSignalHandle;
+osThreadId SYSS_handlerHandle;
 osThreadId DisplayLCDHandle;
 osThreadId MonitorKeysHandle;
 osThreadId WriteSDHandle;
-osThreadId TimeCountHandle;
 osThreadId BLK_EN_TaskHandle;
 osThreadId VBat_MonitorHandle;
-osMessageQId KeysCommandHandle;
 osMessageQId BLK_EN_QHandle;
+osMessageQId KeysCommandHandle;
+osMessageQId LCDCommandHandle;
 
 /* USER CODE BEGIN PV */
 /* Type definitions ---------------------------------------------------------*/
@@ -92,10 +99,36 @@ typedef struct{
 	uint8_t Status;
 }EKGData_S;
 
+typedef enum{
+	lcdstate_printtime,
+	lcdstate_printmenu
+
+}lcdstate_E;
+
+typedef enum{
+	SetRecordTime,
+	StartOperation,
+	SubRecTime,
+	SubRecord
+}MainMenuState_E;
+
+typedef enum{
+	settimealarm,
+	setdatealarm
+}SetTimeState_E;
+
+typedef enum{
+	StartRecording,
+	StopRecording
+}RecordingState_E;
+
 /* Private variables ---------------------------------------------------------*/
 static volatile uint16_t dma_buffer[ADC_DATA_LGTH];
 EKGData_S EKGData;
 static volatile uint16_t Vbat_value;
+static uint8_t lcd_firstline[16] = "                ";
+static uint8_t lcd_secondline[16] = "                ";
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -106,11 +139,10 @@ static void MX_ADC1_Init(void);
 static void MX_SDIO_SD_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_RTC_Init(void);
-void StartReadSignal(void const * argument);
+void SYSS_MainTask(void const * argument);
 void StartDispalyLCD(void const * argument);
 void StartMonitorKeys(void const * argument);
 void StartWriteSD(void const * argument);
-void StartTimeCount(void const * argument);
 void Start_BLKEN(void const * argument);
 void Read_Vbat(void const * argument);
 
@@ -122,7 +154,7 @@ static void MX_LCD_Init(void);
 /* USER CODE BEGIN 0 */
 FATFS fileSystem;
 FIL EKGFile;
-uint8_t path[] = "EKG6666.txt\0";
+uint8_t path[] = "EKG.txt\0";
 UINT testBytes;
 FRESULT res;
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
@@ -138,10 +170,14 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 /*		HAL_ADC_Stop(&hadc1);
 		HAL_ADC_Stop_DMA(&hadc1);*/
 	}
-	else
+	else if(AQUIRED  == EKGData.Status)
 	{
 		LCD1602_print(" SYSTEM FAILURE ");
 		_Error_Handler(__FILE__, __LINE__);
+	}
+	else
+	{
+		/*do nothing*/
 	}
 }
 
@@ -153,6 +189,7 @@ static void MX_LCD_Init(void)
     LCD1602_noBlink();
     LCD1602_clear();
 }
+
 
 /* USER CODE END 0 */
 
@@ -190,7 +227,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   MX_FATFS_Init();
   memset(&(EKGData.ADC_Data), ((uint8_t)0), sizeof(EKGData.ADC_Data));
-  EKGData.Status = SAVED;
   MX_LCD_Init();
 //  SetSystemTime();
   LCD1602_clear();
@@ -204,6 +240,7 @@ int main(void)
   	LCD1602_print(" SYSTEM FAILURE ");
   	 _Error_Handler(__FILE__, __LINE__);
   }
+  EKGData.Status = SAVED;
 
   /* USER CODE END 2 */
 
@@ -220,9 +257,9 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the thread(s) */
-  /* definition and creation of ReadSignal */
-  osThreadDef(ReadSignal, StartReadSignal, osPriorityHigh, 0, 128);
-  ReadSignalHandle = osThreadCreate(osThread(ReadSignal), NULL);
+  /* definition and creation of SYSS_handler */
+  osThreadDef(SYSS_handler, SYSS_MainTask, osPriorityNormal, 0, 128);
+  SYSS_handlerHandle = osThreadCreate(osThread(SYSS_handler), NULL);
 
   /* definition and creation of DisplayLCD */
   osThreadDef(DisplayLCD, StartDispalyLCD, osPriorityIdle, 0, 128);
@@ -235,10 +272,6 @@ int main(void)
   /* definition and creation of WriteSD */
   osThreadDef(WriteSD, StartWriteSD, osPriorityHigh, 0, 128);
   WriteSDHandle = osThreadCreate(osThread(WriteSD), NULL);
-
-  /* definition and creation of TimeCount */
-  osThreadDef(TimeCount, StartTimeCount, osPriorityIdle, 0, 128);
-  TimeCountHandle = osThreadCreate(osThread(TimeCount), NULL);
 
   /* definition and creation of BLK_EN_Task */
   osThreadDef(BLK_EN_Task, Start_BLKEN, osPriorityIdle, 0, 128);
@@ -253,13 +286,17 @@ int main(void)
   /* USER CODE END RTOS_THREADS */
 
   /* Create the queue(s) */
+  /* definition and creation of BLK_EN_Q */
+  osMessageQDef(BLK_EN_Q, 3, uint16_t);
+  BLK_EN_QHandle = osMessageCreate(osMessageQ(BLK_EN_Q), NULL);
+
   /* definition and creation of KeysCommand */
-  osMessageQDef(KeysCommand, 16, uint16_t);
+  osMessageQDef(KeysCommand, 3, uint8_t);
   KeysCommandHandle = osMessageCreate(osMessageQ(KeysCommand), NULL);
 
-  /* definition and creation of BLK_EN_Q */
-  osMessageQDef(BLK_EN_Q, 16, uint16_t);
-  BLK_EN_QHandle = osMessageCreate(osMessageQ(BLK_EN_Q), NULL);
+  /* definition and creation of LCDCommand */
+  osMessageQDef(LCDCommand, 3, lcdstate_E);
+  LCDCommandHandle = osMessageCreate(osMessageQ(LCDCommand), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -577,17 +614,198 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* StartReadSignal function */
-void StartReadSignal(void const * argument)
+/* SYSS_MainTask function */
+void SYSS_MainTask(void const * argument)
 {
   /* init code for FATFS */
-  MX_FATFS_Init();
+//  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
+  lcdstate_E lcdState = lcdstate_printmenu;
+  MainMenuState_E mainmenustate = SetRecordTime;
+  MainMenuState_E premainmenustate = SetRecordTime;
+  SetTimeState_E settimestate = settimealarm;
+  RecordingState_E recordingstate = StartRecording;
+  uint8_t hrs,min;
+  uint keycmd;
+  memcpy(lcd_firstline, "    Main Menu   ", 16);
+  memcpy(lcd_secondline, "<-  Set Time  ->",16);
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  xQueueReceive( KeysCommandHandle, &keycmd, ( TickType_t ) 0 );
+	  if(keycmd == KEY_C_MSK)
+	  {
+	    lcdState = (lcdState == lcdstate_printtime) ? lcdstate_printmenu : lcdstate_printtime;
+	    xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);
+
+	  }
+	  else
+	  {
+	    switch(mainmenustate)
+	    {
+	    case SetRecordTime:
+	    	if(mainmenustate != premainmenustate)
+	    	{
+	    		memcpy(lcd_firstline, "    Main Menu   ", 16);
+	    		memcpy(lcd_secondline, "<-  Set Time  ->",16);
+	  	  	  premainmenustate = mainmenustate;
+	    	}
+	  	  if(
+	  			  (KEY_UP_MSK == keycmd)
+				  ||
+				  (KEY_DOWN_MSK == keycmd)
+			)
+	  	  {
+	  		mainmenustate = StartOperation;
+	  	  }
+	  	  else if (KEY_OK_MSK == keycmd)
+	  	  {
+	  		mainmenustate = SubRecTime;
+	  	  }
+	  	  else
+	  	  {
+
+	  	  }
+	  	  break;
+	    case StartOperation:
+	    	if(mainmenustate != premainmenustate)
+	    	{
+	    		memcpy(lcd_firstline, "    Main Menu   ", 16);
+	    		memcpy(lcd_secondline, "<- Operation  ->",16);
+	    		premainmenustate = mainmenustate;
+	    	}
+	  	  if(
+	  			  (KEY_UP_MSK == keycmd)
+				  ||
+				  (KEY_DOWN_MSK == keycmd)
+			)
+	  	  {
+	  		mainmenustate = SetRecordTime;
+	  	  }
+	  	  else if (KEY_OK_MSK == keycmd)
+	  	  {
+	  		mainmenustate = SubRecord;
+	  	  }
+	  	  else
+	  	  {
+
+	  	  }
+	  	  break;
+	    case SubRecord:
+	    	if(mainmenustate != premainmenustate)
+	    	{
+		    	memcpy(lcd_firstline, "   Operation    ",16);
+		    	memcpy(lcd_secondline, "<-   Start    ->",16);
+	    		premainmenustate = mainmenustate;
+	    	}
+	    	if (
+	    			(KEY_UP_MSK == keycmd)
+					||
+					(KEY_DOWN_MSK == keycmd)
+			   )
+	    	{
+	    		recordingstate = (recordingstate == StartRecording) ? StopRecording : StartRecording;
+		    	if(recordingstate == StartRecording)
+		    	{
+		    		memcpy(lcd_secondline, "<-   Start    ->",16);
+		    	}
+		    	else if(recordingstate == StopRecording)
+		    	{
+		    		memcpy(lcd_secondline, "<-    Stop    ->",16);
+		    	}
+		    	else
+		    	{
+		    		/*do nothing*/
+		    	}
+	    	}
+	    	else if(KEY_OK_MSK == keycmd)
+	    	{
+	    		mainmenustate = StartOperation;
+		    	if(recordingstate == StartRecording)
+		    	{
+		    		HAL_ADC_Start(&hadc1);
+		    		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, ADC_DATA_LGTH);
+		    	}
+		    	else if(recordingstate == StopRecording)
+		    	{
+		    		HAL_ADC_Stop(&hadc1);
+		    	    HAL_ADC_Stop_DMA(&hadc1);
+		    	    f_close(&EKGFile);
+		    	}
+		    	else
+		    	{
+		    		/*do nothing*/
+		    	}
+	    	}
+	    	else
+	    	{
+	    		/*do nothing*/
+	    	}
+	    	break;
+	    case SubRecTime:
+	    	if(mainmenustate != premainmenustate)
+	    	{
+		    	memcpy(lcd_firstline, "    Set Time    ",16);
+	    		premainmenustate = mainmenustate;
+	    	}
+	    	if (KEY_UP_MSK == keycmd)
+	    	{
+	    		min ++;
+	    		if(min == 60)
+	    		{
+	    			min = 0;
+	    			hrs ++;
+	    			if(hrs == 24)
+	    			{
+	    				hrs = 0;
+	    			}
+	    			else
+	    			{
+	    				/*do nothing*/
+	    			}
+	    		}
+	    		else
+	    		{
+	    			/*do nothing*/
+	    		}
+	    	}
+	    	else if(KEY_DOWN_MSK == keycmd)
+	    	{
+	    		if(min == 0)
+	    		{
+	    			min = 59;
+	    			if(hrs == 0)
+	    			{
+	    				hrs = 23;
+	    			}
+	    			else
+	    			{
+	    				hrs --;
+	    			}
+	    		}
+	    		else
+	    		{
+	    			min --;
+	    		}
+	    	}
+	    	else if(KEY_OK_MSK == keycmd)
+	    	{
+	    		mainmenustate = SetRecordTime;
+	    		/*Initlialize the Alarm here*/
+	    	}
+	    	else
+	    	{
+	    		/*do nothing*/
+	    	}
+	    	sprintf(lcd_secondline,"    %.2d:%.2d:00    ", hrs, min  );
+	    	break;
+	    default:
+	  	  break;
+	    }
+	  }
+	  keycmd = NO_KEY_MSK;
+	  osDelay(50);
   }
   /* USER CODE END 5 */ 
 }
@@ -598,19 +816,40 @@ void StartDispalyLCD(void const * argument)
   /* USER CODE BEGIN StartDispalyLCD */
 	RTC_TimeTypeDef sTime;
 	RTC_DateTypeDef sDate;
+	lcdstate_E lcdState = lcdstate_printmenu;
   /* Infinite loop */
   for(;;)
   {
-		HAL_RTC_GetTime(&hrtc,&sTime,RTC_FORMAT_BIN);
-		LCD1602_1stLine();
-		LCD1602_PrintInt((int)(sTime.Hours), (uint8_t)2);
-		LCD1602_print(":");
-		LCD1602_PrintInt((int)(sTime.Minutes), (uint8_t)2);
-		LCD1602_print(":");
-		LCD1602_PrintInt((int)(sTime.Seconds), (uint8_t)2);
-		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	  if(xQueueReceive( LCDCommandHandle, &lcdState, ( TickType_t ) 0 ))
+	  {
+		  LCD1602_clear();
+	  }
+	  else
+	  {
+		 /* do nothing*/
+	  }
+	  switch(lcdState)
+	  {
+	  case lcdstate_printtime:
+		  HAL_RTC_GetTime(&hrtc,&sTime,RTC_FORMAT_BIN);
+		  LCD1602_1stLine();
+		  LCD1602_PrintInt((int)(sTime.Hours), (uint8_t)2);
+		  LCD1602_print(":");
+		  LCD1602_PrintInt((int)(sTime.Minutes), (uint8_t)2);
+		  LCD1602_print(":");
+		  LCD1602_PrintInt((int)(sTime.Seconds), (uint8_t)2);
+		  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+		  break;
+	  case lcdstate_printmenu:
+	  	  LCD1602_1stLine();
+	  	  LCD1602_print(lcd_firstline);
+	  	  LCD1602_2ndLine();
+	  	  LCD1602_print(lcd_secondline);
+	  default:
+		  break;
+	  }
 		
-    osDelay(1000);
+    osDelay(200);
   }
   /* USER CODE END StartDispalyLCD */
 }
@@ -619,27 +858,63 @@ void StartDispalyLCD(void const * argument)
 void StartMonitorKeys(void const * argument)
 {
   /* USER CODE BEGIN StartMonitorKeys */
-	GPIO_PinState keyup_state, keydown_state, keyright_state, keyleft_state;
 	uint16_t tenSecDelay = 10000;
+	uint8_t keysState = NO_KEY_MSK;
   /* Infinite loop */
   for(;;)
   {
-		keyup_state = HAL_GPIO_ReadPin(KEYUP_GPIO_Port, KEYUP_Pin);
-		keydown_state = HAL_GPIO_ReadPin(KEYDOWN_GPIO_Port, KEYDOWN_Pin);
-		keyright_state = HAL_GPIO_ReadPin(KEYRIGHT_GPIO_Port, KEYRIGHT_Pin);
-		keyleft_state = HAL_GPIO_ReadPin(KEYLEFT_GPIO_Port, KEYLEFT_Pin);
+		if(GPIO_PIN_RESET == HAL_GPIO_ReadPin(KEYUP_GPIO_Port, KEYUP_Pin)){
+			keysState |=KEY_UP_MSK;
+		}
+		else if (GPIO_PIN_SET == HAL_GPIO_ReadPin(KEYUP_GPIO_Port, KEYUP_Pin)){
+			keysState &= (~KEY_UP_MSK);
+		}
+		else{
+			/*do nothing*/
+		}
+
+		if(GPIO_PIN_RESET == HAL_GPIO_ReadPin(KEYDOWN_GPIO_Port, KEYDOWN_Pin)){
+			keysState |=KEY_DOWN_MSK;
+		}
+		else if (GPIO_PIN_SET == HAL_GPIO_ReadPin(KEYDOWN_GPIO_Port, KEYDOWN_Pin)){
+			keysState &= (~KEY_DOWN_MSK);
+		}
+		else{
+			/*do nothing*/
+		}
+
+		if(GPIO_PIN_RESET == HAL_GPIO_ReadPin(KEYRIGHT_GPIO_Port, KEYRIGHT_Pin)){
+			keysState |=KEY_OK_MSK;
+		}
+		else if (GPIO_PIN_SET == HAL_GPIO_ReadPin(KEYRIGHT_GPIO_Port, KEYRIGHT_Pin)){
+			keysState &= (~KEY_OK_MSK);
+		}
+		else{
+			/*do nothing*/
+		}
+
+		if(GPIO_PIN_RESET == HAL_GPIO_ReadPin(KEYLEFT_GPIO_Port, KEYLEFT_Pin)){
+			keysState |=KEY_C_MSK;
+		}
+		else if (GPIO_PIN_SET == HAL_GPIO_ReadPin(KEYLEFT_GPIO_Port, KEYLEFT_Pin)){
+			keysState &= (~KEY_C_MSK);
+		}
+		else{
+			/*do nothing*/
+		}
 		
-		if((!keyup_state) || (!keydown_state)|| (!keyright_state) || (!keyleft_state))
+		if(NO_KEY_MSK != keysState)
 		{
 			xQueueReset(BLK_EN_QHandle);
-			xQueueSend(BLK_EN_QHandle, (void *)&tenSecDelay, ( TickType_t ) 0);  
+			xQueueSend(BLK_EN_QHandle, (void *)&tenSecDelay, ( TickType_t ) 0);
+			xQueueSend(KeysCommandHandle, (void *)&keysState, ( TickType_t ) 0);
 		}
 		else
 		{
 			/*do nothing*/
 		}
 		
-    osDelay(100);
+    osDelay(200);
   }
   /* USER CODE END StartMonitorKeys */
 }
@@ -664,8 +939,6 @@ void StartWriteSD(void const * argument)
 	f_write(&EKGFile, (void *)msg1, length, &testBytes);
 	length = sprintf(msg1,"%.2d\n", (sTime.Seconds));
 	f_write(&EKGFile, (void *)msg1, length, &testBytes);
-	HAL_ADC_Start(&hadc1);
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, ADC_DATA_LGTH);
 
   /* Infinite loop */
   for(;;)
@@ -690,18 +963,6 @@ void StartWriteSD(void const * argument)
   /* USER CODE END StartWriteSD */
 }
 
-/* StartTimeCount function */
-void StartTimeCount(void const * argument)
-{
-  /* USER CODE BEGIN StartTimeCount */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(10);
-  }
-  /* USER CODE END StartTimeCount */
-}
-
 /* Start_BLKEN function */
 void Start_BLKEN(void const * argument)
 {
@@ -710,11 +971,10 @@ void Start_BLKEN(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	HAL_GPIO_WritePin(GPIOA, BLC_Pin, GPIO_PIN_RESET);
-	while(!xQueueReceive( BLK_EN_QHandle, &blkTimeOn, ( TickType_t ) 0 ));
-	HAL_GPIO_WritePin(GPIOA, BLC_Pin, GPIO_PIN_SET);
-	 res = f_close(&EKGFile);
-    osDelay((uint32_t)blkTimeOn);
+	  HAL_GPIO_WritePin(GPIOA, BLC_Pin, GPIO_PIN_RESET);
+	  while(!xQueueReceive( BLK_EN_QHandle, &blkTimeOn, ( TickType_t ) 0 ));
+	  HAL_GPIO_WritePin(GPIOA, BLC_Pin, GPIO_PIN_SET);
+	  osDelay((uint32_t)blkTimeOn);
   }
   /* USER CODE END Start_BLKEN */
 }

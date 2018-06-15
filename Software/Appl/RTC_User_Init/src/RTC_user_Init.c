@@ -18,9 +18,6 @@ static void SetYear(void);
 
 
 
-
-
-
 static void MX_RTC_UserInit(uint8_t hrs, uint8_t min, uint8_t sec, uint8_t day, uint8_t mon, uint16_t yrs)
 {
 
@@ -209,6 +206,11 @@ static void SetYear(void)
 	}
 }
 
+void SetAlarmRecordtime(void)
+{
+
+}
+
 void SetSystemTime(void)
 {
 	LCD1602_setCursor(1,4);
@@ -265,3 +267,4 @@ void SetSystemTime(void)
 		HAL_Delay(200);
 	}
 }
+

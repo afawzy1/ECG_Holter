@@ -16,6 +16,7 @@ typedef enum
 
 
 extern void SetSystemTime(void);
+extern void SetAlarmRecordtime(void);
 
 
 
