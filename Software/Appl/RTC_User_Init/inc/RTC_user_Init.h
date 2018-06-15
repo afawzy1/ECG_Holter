@@ -2,6 +2,9 @@
 #ifndef RTC_USER_INIT
 #define RTC_USER_INIT
 
+#include "stm32f4xx_hal.h"
+
+
 typedef enum
 {
 	hoursInit=13,
@@ -16,7 +19,7 @@ typedef enum
 
 
 extern void SetSystemTime(void);
-extern void SetAlarmRecordtime(void);
+extern void InitializeAlarm(uint8_t hrs, uint8_t min);
 
 
 

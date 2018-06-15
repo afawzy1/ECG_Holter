@@ -1,5 +1,4 @@
 #include "RTC_user_Init.h"
-#include "stm32f4xx_hal.h"
 #include "stm32_topway_16x2.h"
 
 
@@ -23,7 +22,6 @@ static void MX_RTC_UserInit(uint8_t hrs, uint8_t min, uint8_t sec, uint8_t day, 
 
   RTC_TimeTypeDef sTime;
   RTC_DateTypeDef sDate;
-  RTC_AlarmTypeDef sAlarm;
 
     /**Initialize RTC Only 
     */
@@ -206,8 +204,24 @@ static void SetYear(void)
 	}
 }
 
-void SetAlarmRecordtime(void)
+void InitializeAlarm(uint8_t hrs, uint8_t min)
 {
+	RTC_AlarmTypeDef sAlarm;
+	  sAlarm.AlarmTime.Hours = hrs;
+	  sAlarm.AlarmTime.Minutes = min;
+	  sAlarm.AlarmTime.Seconds = 0;
+	  sAlarm.AlarmTime.SubSeconds = 0;
+	  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+	  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_SET;
+	  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+	  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+	  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+	  sAlarm.AlarmDateWeekDay = 1;
+	  sAlarm.Alarm = RTC_ALARM_A;
+	  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
+	  {
+	    _Error_Handler(__FILE__, __LINE__);
+	  }
 
 }
 
