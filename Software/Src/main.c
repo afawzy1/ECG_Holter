@@ -171,8 +171,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 			EKGData.ADC_Data[indx] = dma_buffer[indx];
 		}
 		EKGData.Status = AQUIRED;
-		HAL_ADC_Stop(&hadc1);
-		HAL_ADC_Stop_DMA(&hadc1);
+/*		HAL_ADC_Stop(&hadc1);
+		HAL_ADC_Stop_DMA(&hadc1);*/
 	}
 	else if(AQUIRED  == EKGData.Status)
 	{
@@ -196,13 +196,16 @@ static void MX_LCD_Init(void)
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
+	if(Recording == RecStateDisplay)
+	{
 /*	RecStateDisplay = N_Recording;
 	lcdstate_E lcdState = lcdstate_printtime;
 	xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);*/
-	RecStateDisplay = N_Recording;
-	HAL_ADC_Stop(&hadc1);
-    HAL_ADC_Stop_DMA(&hadc1);
-    f_close(&EKGFile);
+		RecStateDisplay = N_Recording;
+		HAL_ADC_Stop(&hadc1);
+		HAL_ADC_Stop_DMA(&hadc1);
+//		f_close(&EKGFile);
+	}
 
 }
 
@@ -244,7 +247,6 @@ int main(void)
   MX_FATFS_Init();
   memset(&(EKGData.ADC_Data), ((uint8_t)0), sizeof(EKGData.ADC_Data));
   MX_LCD_Init();
-  SetSystemTime();
   LCD1602_clear();
   while(FR_OK != res)
   {
@@ -259,8 +261,10 @@ int main(void)
 		LCD1602_2ndLine();
 		LCD1602_print("Press OK 2 retry");
 		while(GPIO_PIN_RESET != HAL_GPIO_ReadPin(KEYRIGHT_GPIO_Port, KEYRIGHT_Pin));
+		NVIC_SystemReset();
 	  }
   }
+  SetSystemTime();
   EKGData.Status = SAVED;
 
   /* USER CODE END 2 */
@@ -512,7 +516,7 @@ static void MX_RTC_Init(void)
     */
   sAlarm.AlarmTime.Hours = 1;
   sAlarm.AlarmTime.Minutes = 0;
-  sAlarm.AlarmTime.Seconds = 1;
+  sAlarm.AlarmTime.Seconds = 0;
   sAlarm.AlarmTime.SubSeconds = 0;
   sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_SET;
