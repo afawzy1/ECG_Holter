@@ -111,8 +111,6 @@ typedef enum{
 }RecStateDisplay_E;
 
 typedef enum{
-	SetRecordTime,
-	StartOperation,
 	SubRecTime,
 	SubRecord
 }MainMenuState_E;
@@ -129,8 +127,8 @@ static volatile uint16_t Vbat_value;
 static uint8_t lcd_firstline[16] = "                ";
 static uint8_t lcd_secondline[16] = "                ";
 static RecStateDisplay_E RecStateDisplay = N_Recording;
-static MainMenuState_E mainmenustate = SetRecordTime;
-static MainMenuState_E premainmenustate = SetRecordTime;
+static MainMenuState_E mainmenustate = SubRecord;
+static MainMenuState_E premainmenustate = SubRecord;
 static RecordingState_E recordingstate = StartRecording;
 static uint8_t hrs,min;
 static uint8_t keycmd;
@@ -162,7 +160,7 @@ FATFS fileSystem;
 FIL EKGFile;
 uint8_t path[] = "EKG.txt\0";
 UINT testBytes;
-FRESULT res;
+FRESULT res = FR_NO_FILESYSTEM;
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	uint16_t indx = 0;
@@ -198,13 +196,16 @@ static void MX_LCD_Init(void)
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
+	if(Recording == RecStateDisplay)
+	{
 /*	RecStateDisplay = N_Recording;
 	lcdstate_E lcdState = lcdstate_printtime;
 	xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);*/
-	RecStateDisplay = N_Recording;
-	HAL_ADC_Stop(&hadc1);
-    HAL_ADC_Stop_DMA(&hadc1);
-    f_close(&EKGFile);
+		RecStateDisplay = N_Recording;
+		HAL_ADC_Stop(&hadc1);
+		HAL_ADC_Stop_DMA(&hadc1);
+//		f_close(&EKGFile);
+	}
 
 }
 
@@ -246,18 +247,24 @@ int main(void)
   MX_FATFS_Init();
   memset(&(EKGData.ADC_Data), ((uint8_t)0), sizeof(EKGData.ADC_Data));
   MX_LCD_Init();
-  SetSystemTime();
   LCD1602_clear();
-  if(f_mount(&fileSystem,SDPath, 1) == FR_OK)
+  while(FR_OK != res)
   {
-    res = f_open(&EKGFile, (char*)path, FA_CREATE_ALWAYS | FA_WRITE );
-
+	  if(f_mount(&fileSystem,SDPath, 1) == FR_OK)
+	  {
+		res = f_open(&EKGFile, (char*)path, FA_CREATE_ALWAYS | FA_WRITE );
+	  }
+	  else
+	  {
+		LCD1602_1stLine();
+		LCD1602_print("Unable 2 MountSD");
+		LCD1602_2ndLine();
+		LCD1602_print("Press OK 2 retry");
+		while(GPIO_PIN_RESET != HAL_GPIO_ReadPin(KEYRIGHT_GPIO_Port, KEYRIGHT_Pin));
+		NVIC_SystemReset();
+	  }
   }
-  else
-  {
-  	LCD1602_print(" SYSTEM FAILURE ");
-  	 _Error_Handler(__FILE__, __LINE__);
-  }
+  SetSystemTime();
   EKGData.Status = SAVED;
 
   /* USER CODE END 2 */
@@ -509,7 +516,7 @@ static void MX_RTC_Init(void)
     */
   sAlarm.AlarmTime.Hours = 1;
   sAlarm.AlarmTime.Minutes = 0;
-  sAlarm.AlarmTime.Seconds = 50;
+  sAlarm.AlarmTime.Seconds = 0;
   sAlarm.AlarmTime.SubSeconds = 0;
   sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_SET;
@@ -636,12 +643,12 @@ static void MX_GPIO_Init(void)
 void SYSS_MainTask(void const * argument)
 {
   /* init code for FATFS */
-//  MX_FATFS_Init();
+  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
   lcdstate_E lcdState = lcdstate_printmenu;
-  memcpy(lcd_firstline, "    Main Menu   ", 16);
-  memcpy(lcd_secondline, "<-Set duration->",16);
+  memcpy(lcd_firstline, "   Operation    ", 16);
+  memcpy(lcd_secondline, "<-   Start    ->",16);
   /* Infinite loop */
   for(;;)
   {
@@ -656,54 +663,6 @@ void SYSS_MainTask(void const * argument)
 	  {
 	    switch(mainmenustate)
 	    {
-	    case SetRecordTime:
-	    	if(mainmenustate != premainmenustate)
-	    	{
-	    		memcpy(lcd_firstline, "    Main Menu   ", 16);
-	    		memcpy(lcd_secondline, "<-Set duration->",16);
-	  	  	  premainmenustate = mainmenustate;
-	    	}
-	  	  if(
-	  			  (KEY_UP_MSK == keycmd)
-				  ||
-				  (KEY_DOWN_MSK == keycmd)
-			)
-	  	  {
-	  		mainmenustate = StartOperation;
-	  	  }
-	  	  else if (KEY_OK_MSK == keycmd)
-	  	  {
-	  		mainmenustate = SubRecTime;
-	  	  }
-	  	  else
-	  	  {
-
-	  	  }
-	  	  break;
-	    case StartOperation:
-	    	if(mainmenustate != premainmenustate)
-	    	{
-	    		memcpy(lcd_firstline, "    Main Menu   ", 16);
-	    		memcpy(lcd_secondline, "<- Operation  ->",16);
-	    		premainmenustate = mainmenustate;
-	    	}
-	  	  if(
-	  			  (KEY_UP_MSK == keycmd)
-				  ||
-				  (KEY_DOWN_MSK == keycmd)
-			)
-	  	  {
-	  		mainmenustate = SetRecordTime;
-	  	  }
-	  	  else if (KEY_OK_MSK == keycmd)
-	  	  {
-	  		mainmenustate = SubRecord;
-	  	  }
-	  	  else
-	  	  {
-
-	  	  }
-	  	  break;
 	    case SubRecord:
 	    	if(mainmenustate != premainmenustate)
 	    	{
@@ -733,17 +692,14 @@ void SYSS_MainTask(void const * argument)
 	    	}
 	    	else if(KEY_OK_MSK == keycmd)
 	    	{
-	    		mainmenustate = StartOperation;
-	    		lcdState = lcdstate_printtime;
-	    		xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);
 		    	if(recordingstate == StartRecording)
 		    	{
-		    		RecStateDisplay = Recording;
-		    		HAL_ADC_Start(&hadc1);
-		    		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, ADC_DATA_LGTH);
+		    		mainmenustate = SubRecTime;
 		    	}
 		    	else if(recordingstate == StopRecording)
 		    	{
+		    		lcdState = lcdstate_printtime;
+		    		xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);
 		    		RecStateDisplay = N_Recording;
 		    		HAL_ADC_Stop(&hadc1);
 		    	    HAL_ADC_Stop_DMA(&hadc1);
@@ -808,9 +764,13 @@ void SYSS_MainTask(void const * argument)
 	    	}
 	    	else if(KEY_OK_MSK == keycmd)
 	    	{
-	    		mainmenustate = SetRecordTime;
-	    		/*Initialize the Alarm here*/
+	    		mainmenustate = SubRecord;
 	    		InitializeAlarm(hrs, min);
+	    		RecStateDisplay = Recording;
+	    		HAL_ADC_Start(&hadc1);
+	    		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)dma_buffer, ADC_DATA_LGTH);
+	    		lcdState = lcdstate_printtime;
+	    		xQueueSend(LCDCommandHandle, (void *)&lcdState, ( TickType_t ) 0);
 	    	}
 	    	else
 	    	{

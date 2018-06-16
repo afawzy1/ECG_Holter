@@ -207,6 +207,47 @@ static void SetYear(void)
 void InitializeAlarm(uint8_t hrs, uint8_t min)
 {
 	RTC_AlarmTypeDef sAlarm;
+	RTC_DateTypeDef sDate;
+	RTC_TimeTypeDef sTime;
+
+	HAL_RTC_GetDate(&hrtc,&sDate,RTC_FORMAT_BIN);
+	HAL_RTC_GetTime(&hrtc, &sTime,RTC_FORMAT_BIN);
+
+	if(
+			(hrs <= sTime.Hours)
+			&&
+			(min <= sTime.Minutes)
+	  )
+	{
+		if(
+				(sDate.Month == 4)
+				||
+				(sDate.Month == 6)
+				||
+				(sDate.Month == 9)
+				||
+				(sDate.Month == 11)
+		 )
+		{
+			sDate.Date = (sDate.Date + 1) % 30 ;
+		}
+		else if(sDate.Month == 2)
+		{
+			if((sDate.Year % 4)==0)
+			{
+				sDate.Date = (sDate.Date + 1) % 29 ;
+			}
+			else
+			{
+				sDate.Date = (sDate.Date + 1) % 28 ;
+			}
+		}
+		else
+		{
+			sDate.Date = (sDate.Date + 1) % 31 ;
+		}
+	}
+
 	  sAlarm.AlarmTime.Hours = hrs;
 	  sAlarm.AlarmTime.Minutes = min;
 	  sAlarm.AlarmTime.Seconds = 0;
@@ -216,7 +257,7 @@ void InitializeAlarm(uint8_t hrs, uint8_t min)
 	  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
 	  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
 	  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-	  sAlarm.AlarmDateWeekDay = 1;
+	  sAlarm.AlarmDateWeekDay = sDate.Date;
 	  sAlarm.Alarm = RTC_ALARM_A;
 	  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
 	  {
